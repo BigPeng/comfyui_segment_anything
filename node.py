@@ -201,12 +201,19 @@ def create_pil_output(image_np, masks, boxes_filt):
     return output_images, output_masks
 
 
-def create_tensor_output(image_np, masks, boxes_filt):
+def create_tensor_output(image_np, masks, boxes_filt,background):
+    background_pixel = [0, 0, 0, 0]
+    if background == "black":
+        background_pixel = [0, 0, 0, 0]
+    if background == "white":
+        background_pixel = [255, 255, 255, 0]
+    if background == "green":
+        background_pixel = [0, 255, 0, 0]
     output_masks, output_images = [], []
     boxes_filt = boxes_filt.numpy().astype(int) if boxes_filt is not None else None
     for mask in masks:
         image_np_copy = copy.deepcopy(image_np)
-        image_np_copy[~np.any(mask, axis=0)] = np.array([0, 0, 0, 0])
+        image_np_copy[~np.any(mask, axis=0)] = np.array(background_pixel)
         output_image, output_mask = split_image_mask(
             Image.fromarray(image_np_copy))
         output_masks.append(output_mask)
@@ -229,7 +236,8 @@ def split_image_mask(image):
 def sam_segment(
     sam_model,
     image,
-    boxes
+    boxes,
+    background
 ):
     if boxes.shape[0] == 0:
         return None
@@ -250,7 +258,7 @@ def sam_segment(
         boxes=transformed_boxes.to(sam_device),
         multimask_output=False)
     masks = masks.permute(1, 0, 2, 3).cpu().numpy()
-    return create_tensor_output(image_np, masks, boxes)
+    return create_tensor_output(image_np, masks, boxes,background)
 
 
 class SAMModelLoader:
@@ -296,6 +304,7 @@ class GroundingDinoSAMSegment:
                 "grounding_dino_model": ('GROUNDING_DINO_MODEL', {}),
                 "image": ('IMAGE', {}),
                 "prompt": ("STRING", {}),
+                "background": (["black", "white", "green"], {"default": "black"}),
                 "threshold": ("FLOAT", {
                     "default": 0.3,
                     "min": 0,
@@ -308,7 +317,7 @@ class GroundingDinoSAMSegment:
     FUNCTION = "main"
     RETURN_TYPES = ("IMAGE", "MASK")
 
-    def main(self, grounding_dino_model, sam_model, image, prompt, threshold):
+    def main(self, grounding_dino_model, sam_model, image, prompt, background, threshold):
         res_images = []
         res_masks = []
         for item in image:
@@ -325,7 +334,8 @@ class GroundingDinoSAMSegment:
             (images, masks) = sam_segment(
                 sam_model,
                 item,
-                boxes
+                boxes,
+                background
             )
             res_images.extend(images)
             res_masks.extend(masks)
